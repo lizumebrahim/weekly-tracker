@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Weekly Ledger</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #1a1a1a;
+    background: #faf9f7;
+  }
+  main { max-width: 480px; margin: 0 auto; padding: 32px 20px 80px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+  .sail { font-size: 22px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .budget-card { background: #fff; border: 1px solid #ece9e3; border-radius: 16px; padding: 24px; margin-bottom: 32px; }
+  .budget-top { display: flex; justify-content: space-between; font-size: 13px; color: #8a8578; margin-bottom: 8px; }
+  .budget-top span:first-child { font-weight: 500; }
+  .budget-amount { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
+  .budget-of { font-size: 18px; font-weight: 400; color: #8a8578; }
+  .bar-track { height: 8px; border-radius: 999px; background: #f0eee8; overflow: hidden; margin-bottom: 10px; }
+  .bar-fill { height: 100%; border-radius: 999px; background: #1a1a1a; transition: width 0.3s ease; }
+  .budget-remaining { font-size: 13px; color: #5c5850; }
+  section { margin-bottom: 28px; }
+  h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #8a8578; margin-bottom: 10px; }
+  .empty { font-size: 14px; color: #8a8578; }
+  ul { list-style: none; margin: 0; padding: 0; background: #fff; border: 1px solid #ece9e3; border-radius: 16px; overflow: hidden; }
+  li { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #f2f0eb; }
+  li:last-child { border-bottom: none; }
+  .recipient-name { font-size: 15px; font-weight: 500; }
+  .meta { font-size: 12px; color: #a39d8f; margin-top: 2px; }
+  .amount { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="sail">⛵</div>
+    <h1>Weekly Ledger</h1>
+  </header>
+
+  <section class="budget-card">
+    <div class="budget-top">
+      <span>This week</span>
+      <span id="days-left"></span>
+    </div>
+    <div class="budget-amount">
+      <span id="week-total">MVR 0.00</span>
+      <span class="budget-of" id="week-of"></span>
+    </div>
+    <div class="bar-track"><div class="bar-fill" id="bar-fill" style="width:0%"></div></div>
+    <div class="budget-remaining" id="remaining"></div>
+  </section>
+
+  <section>
+    <h2>Sent this week</h2>
+    <div id="week-list"></div>
+  </section>
+
+  <section>
+    <h2>All recipients</h2>
+    <ul id="recipient-list"></ul>
+  </section>
+</main>
+
+<script>
+  const WEEKLY_BUDGET = 1000;
+
+  function formatMVR(n) {
+    return 'MVR ' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function currentWeekStart(now = new Date()) {
+    const day = now.getDay();
+    const diff = (day - 5 + 7) % 7;
+    const start = new Date(now);
+    start.setDate(now.getDate() - diff);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  async function load() {
+    const res = await fetch('/api/transactions');
+    const all = await res.json();
+
+    const weekStart = currentWeekStart();
+    const weekTx = all.filter(t => t.transaction_date && new Date(t.transaction_date) >= weekStart);
+    const weekTotal = weekTx.reduce((sum, t) => sum + Number(t.amount), 0);
+    const remaining = WEEKLY_BUDGET - weekTotal;
+    const pct = Math.min(100, (weekTotal / WEEKLY_BUDGET) * 100);
+
+    const nextFriday = new Date(weekStart);
+    nextFriday.setDate(weekStart.getDate() + 7);
+    const daysLeft = Math.max(0, Math.ceil((nextFriday - Date.now()) / 86400000));
+
+    document.getElementById('week-total').textContent = formatMVR(weekTotal);
+    document.getElementById('week-of').textContent = ' / ' + formatMVR(WEEKLY_BUDGET);
+    document.getElementById('days-left').textContent = daysLeft + (daysLeft === 1 ? ' day' : ' days') + ' to Friday';
+    document.getElementById('bar-fill').style.width = pct + '%';
+    document.getElementById('bar-fill').style.background = remaining < 0 ? '#e2483d' : '#1a1a1a';
+    document.getElementById('remaining').textContent = remaining >= 0
+      ? formatMVR(remaining) + ' left'
+      : formatMVR(Math.abs(remaining)) + ' over budget';
+
+    const weekListEl = document.getElementById('week-list');
+    if (weekTx.length === 0) {
+      weekListEl.innerHTML = '<p class="empty">Nothing logged since Friday.</p>';
+    } else {
+      weekListEl.innerHTML = '<ul>' + weekTx.map(t => `
+        <li>
+          <div>
+            <div class="recipient-name">${t.recipient_name || 'Unknown'}</div>
+            <div class="meta">${t.reference || ''}</div>
+          </div>
+          <div class="amount">${formatMVR(Number(t.amount))}</div>
+        </li>`).join('') + '</ul>';
+    }
+
+    const recipientTotals = new Map();
+    for (const t of all) {
+      const name = t.recipient_name || 'Unknown';
+      const cur = recipientTotals.get(name) || { total: 0, count: 0 };
+      cur.total += Number(t.amount);
+      cur.count += 1;
+      recipientTotals.set(name, cur);
+    }
+    const recipients = Array.from(recipientTotals.entries()).sort((a, b) => b[1].total - a[1].total);
+
+    document.getElementById('recipient-list').innerHTML = recipients.map(([name, data]) => `
+      <li>
+        <div>
+          <div class="recipient-name">${name}</div>
+          <div class="meta">${data.count} ${data.count === 1 ? 'transfer' : 'transfers'}</div>
+        </div>
+        <div class="amount">${formatMVR(data.total)}</div>
+      </li>`).join('');
+  }
+
+  load();
+</script>
+</body>
+</html>
