@@ -1,0 +1,12 @@
+{
+  "name": "weekly-tracker",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-20",
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS"
+  },
+  "ai": {
+    "binding": "AI"
+  }
+}
