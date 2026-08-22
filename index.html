@@ -228,8 +228,8 @@
 
 <script>
   const WEEKLY_BUDGET = 1000;
-  const SUPABASE_URL = localStorage.getItem('supabaseUrl') || '';
-  const SUPABASE_KEY = localStorage.getItem('supabaseKey') || '';
+  const SUPABASE_URL = 'https://zqfayygpmkpzoeogvdkdw.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxZmF5eWdwbWtwemVvZ3Zka2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczMTA5OTcsImV4cCI6MjEwMjg4Njk5N30.HGn4-gEyis98ZrVd3AzQwOIxylLQewYN9ydQebmOyxw';
   
   let supabase = null;
   let currentUser = null;
@@ -240,7 +240,7 @@
       supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
       checkAuthStatus();
     } else {
-      console.warn('Supabase credentials not configured. Add them to localStorage.');
+      console.warn('Supabase credentials not configured.');
     }
   }
 
@@ -306,7 +306,7 @@
   // Google Login
   document.getElementById('google-login-btn').addEventListener('click', async () => {
     if (!supabase) {
-      alert('Supabase not configured. Please set SUPABASE_URL and SUPABASE_KEY in localStorage.');
+      alert('Supabase not configured.');
       return;
     }
 
@@ -369,7 +369,18 @@
     if (!currentUser) return;
 
     try {
-      const res = await fetch('/api/transactions');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        updateUIForLoggedOut();
+        return;
+      }
+
+      const res = await fetch('/api/transactions', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
       if (res.status === 401) {
         updateUIForLoggedOut();
         return;
