@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Weekly Ledger</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --bg-primary: #faf9f7;
@@ -36,28 +37,120 @@
     transition: background 0.2s, color 0.2s;
   }
   main { max-width: 480px; margin: 0 auto; padding: 32px 20px 80px; }
-  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 12px; }
   .header-left { display: flex; align-items: center; gap: 10px; }
   .logo { font-size: 24px; }
   h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
   
-  .theme-toggle {
+  .header-buttons { display: flex; align-items: center; gap: 8px; }
+
+  .theme-toggle,
+  .login-btn,
+  .profile-btn {
     background: none;
     border: none;
-    font-size: 20px;
+    font-size: 16px;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 6px 12px;
     border-radius: 8px;
     color: var(--text-primary);
     transition: background 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-weight: 500;
   }
-  .theme-toggle:hover {
+
+  .theme-toggle:hover,
+  .login-btn:hover,
+  .profile-btn:hover {
     background: var(--border);
   }
 
+  .login-btn {
+    font-size: 14px;
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+  }
+
+  .profile-btn {
+    font-size: 14px;
+    padding: 8px 16px;
+  }
+
+  /* Modal Styles */
+  .modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal.active {
+    display: flex;
+  }
+
+  .modal-content {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+
+  .modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-primary);
+  }
+
+  .google-btn {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-primary);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .google-btn:hover {
+    background: var(--border);
+  }
+
+  .loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  /* Main Content */
   .budget-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 32px; transition: background 0.2s, border 0.2s; }
   .budget-top { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
   .budget-top span:first-child { font-weight: 500; }
@@ -75,6 +168,10 @@
   .recipient-name { font-size: 15px; font-weight: 500; }
   .meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
   .amount { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .hidden {
+    display: none;
+  }
 </style>
 </head>
 <body>
@@ -84,7 +181,11 @@
       <div class="logo">💰</div>
       <h1>Weekly Ledger</h1>
     </div>
-    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+    <div class="header-buttons">
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+      <button class="login-btn" id="login-btn">Login</button>
+      <button class="profile-btn hidden" id="profile-btn">👤</button>
+    </div>
   </header>
 
   <section class="budget-card">
@@ -111,8 +212,68 @@
   </section>
 </main>
 
+<!-- Login Modal -->
+<div class="modal" id="login-modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Sign In</h2>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <button class="google-btn" id="google-login-btn">
+      <span>📧</span>
+      <span>Sign in with Google</span>
+    </button>
+  </div>
+</div>
+
 <script>
   const WEEKLY_BUDGET = 1000;
+  const SUPABASE_URL = localStorage.getItem('supabaseUrl') || '';
+  const SUPABASE_KEY = localStorage.getItem('supabaseKey') || '';
+  
+  let supabase = null;
+  let currentUser = null;
+
+  // Initialize Supabase
+  function initSupabase() {
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      checkAuthStatus();
+    } else {
+      console.warn('Supabase credentials not configured. Add them to localStorage.');
+    }
+  }
+
+  // Check if user is logged in
+  async function checkAuthStatus() {
+    if (!supabase) return;
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        currentUser = user;
+        updateUIForLoggedIn(user);
+      } else {
+        updateUIForLoggedOut();
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      updateUIForLoggedOut();
+    }
+  }
+
+  function updateUIForLoggedIn(user) {
+    document.getElementById('login-btn').classList.add('hidden');
+    document.getElementById('profile-btn').classList.remove('hidden');
+    document.getElementById('profile-btn').title = user.email || 'User';
+    load();
+  }
+
+  function updateUIForLoggedOut() {
+    document.getElementById('login-btn').classList.remove('hidden');
+    document.getElementById('profile-btn').classList.add('hidden');
+    document.getElementById('login-modal').classList.remove('active');
+  }
 
   // Theme management
   function initTheme() {
@@ -126,6 +287,64 @@
       document.getElementById('theme-toggle').textContent = '🌙';
     }
   }
+
+  // Modal handlers
+  document.getElementById('login-btn').addEventListener('click', () => {
+    document.getElementById('login-modal').classList.add('active');
+  });
+
+  document.getElementById('modal-close').addEventListener('click', () => {
+    document.getElementById('login-modal').classList.remove('active');
+  });
+
+  document.getElementById('login-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'login-modal') {
+      document.getElementById('login-modal').classList.remove('active');
+    }
+  });
+
+  // Google Login
+  document.getElementById('google-login-btn').addEventListener('click', async () => {
+    if (!supabase) {
+      alert('Supabase not configured. Please set SUPABASE_URL and SUPABASE_KEY in localStorage.');
+      return;
+    }
+
+    const btn = document.getElementById('google-login-btn');
+    btn.classList.add('loading');
+
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Login error:', error);
+      alert('Login failed: ' + error.message);
+    } finally {
+      btn.classList.remove('loading');
+    }
+  });
+
+  // Profile button (logout)
+  document.getElementById('profile-btn').addEventListener('click', async () => {
+    if (!supabase) return;
+
+    const confirmed = confirm('Sign out?');
+    if (confirmed) {
+      try {
+        await supabase.auth.signOut();
+        currentUser = null;
+        updateUIForLoggedOut();
+      } catch (error) {
+        console.error('Logout error:', error);
+      }
+    }
+  });
 
   document.getElementById('theme-toggle').addEventListener('click', () => {
     const isDark = document.documentElement.classList.toggle('dark');
@@ -147,65 +366,76 @@
   }
 
   async function load() {
-    const res = await fetch('/api/transactions');
-    const all = await res.json();
+    if (!currentUser) return;
 
-    const weekStart = currentWeekStart();
-    const weekTx = all.filter(t => t.transaction_date && new Date(t.transaction_date) >= weekStart);
-    const weekTotal = weekTx.reduce((sum, t) => sum + Number(t.amount), 0);
-    const remaining = WEEKLY_BUDGET - weekTotal;
-    const pct = Math.min(100, (weekTotal / WEEKLY_BUDGET) * 100);
+    try {
+      const res = await fetch('/api/transactions');
+      if (res.status === 401) {
+        updateUIForLoggedOut();
+        return;
+      }
 
-    const nextFriday = new Date(weekStart);
-    nextFriday.setDate(weekStart.getDate() + 7);
-    const daysLeft = Math.max(0, Math.ceil((nextFriday - Date.now()) / 86400000));
+      const all = await res.json();
 
-    document.getElementById('week-total').textContent = formatMVR(weekTotal);
-    document.getElementById('week-of').textContent = ' / ' + formatMVR(WEEKLY_BUDGET);
-    document.getElementById('days-left').textContent = daysLeft + (daysLeft === 1 ? ' day' : ' days') + ' to Friday';
-    document.getElementById('bar-fill').style.width = pct + '%';
-    document.getElementById('bar-fill').style.background = remaining < 0 ? '#e2483d' : 'var(--bar-fill)';
-    document.getElementById('remaining').textContent = remaining >= 0
-      ? formatMVR(remaining) + ' left'
-      : formatMVR(Math.abs(remaining)) + ' over budget';
+      const weekStart = currentWeekStart();
+      const weekTx = all.filter(t => t.transaction_date && new Date(t.transaction_date) >= weekStart);
+      const weekTotal = weekTx.reduce((sum, t) => sum + Number(t.amount), 0);
+      const remaining = WEEKLY_BUDGET - weekTotal;
+      const pct = Math.min(100, (weekTotal / WEEKLY_BUDGET) * 100);
 
-    const weekListEl = document.getElementById('week-list');
-    if (weekTx.length === 0) {
-      weekListEl.innerHTML = '<p class="empty">Nothing logged since Friday.</p>';
-    } else {
-      weekListEl.innerHTML = '<ul>' + weekTx.map(t => `
+      const nextFriday = new Date(weekStart);
+      nextFriday.setDate(weekStart.getDate() + 7);
+      const daysLeft = Math.max(0, Math.ceil((nextFriday - Date.now()) / 86400000));
+
+      document.getElementById('week-total').textContent = formatMVR(weekTotal);
+      document.getElementById('week-of').textContent = ' / ' + formatMVR(WEEKLY_BUDGET);
+      document.getElementById('days-left').textContent = daysLeft + (daysLeft === 1 ? ' day' : ' days') + ' to Friday';
+      document.getElementById('bar-fill').style.width = pct + '%';
+      document.getElementById('bar-fill').style.background = remaining < 0 ? '#e2483d' : 'var(--bar-fill)';
+      document.getElementById('remaining').textContent = remaining >= 0
+        ? formatMVR(remaining) + ' left'
+        : formatMVR(Math.abs(remaining)) + ' over budget';
+
+      const weekListEl = document.getElementById('week-list');
+      if (weekTx.length === 0) {
+        weekListEl.innerHTML = '<p class="empty">Nothing logged since Friday.</p>';
+      } else {
+        weekListEl.innerHTML = '<ul>' + weekTx.map(t => `
+          <li>
+            <div>
+              <div class="recipient-name">${t.recipient_name || 'Unknown'}</div>
+              <div class="meta">${t.reference || ''}</div>
+            </div>
+            <div class="amount">${formatMVR(Number(t.amount))}</div>
+          </li>`).join('') + '</ul>';
+      }
+
+      const recipientTotals = new Map();
+      for (const t of all) {
+        const name = t.recipient_name || 'Unknown';
+        const cur = recipientTotals.get(name) || { total: 0, count: 0 };
+        cur.total += Number(t.amount);
+        cur.count += 1;
+        recipientTotals.set(name, cur);
+      }
+      const recipients = Array.from(recipientTotals.entries()).sort((a, b) => b[1].total - a[1].total);
+
+      document.getElementById('recipient-list').innerHTML = recipients.map(([name, data]) => `
         <li>
           <div>
-            <div class="recipient-name">${t.recipient_name || 'Unknown'}</div>
-            <div class="meta">${t.reference || ''}</div>
+            <div class="recipient-name">${name}</div>
+            <div class="meta">${data.count} ${data.count === 1 ? 'transfer' : 'transfers'}</div>
           </div>
-          <div class="amount">${formatMVR(Number(t.amount))}</div>
-        </li>`).join('') + '</ul>';
+          <div class="amount">${formatMVR(data.total)}</div>
+        </li>`).join('');
+    } catch (error) {
+      console.error('Load error:', error);
     }
-
-    const recipientTotals = new Map();
-    for (const t of all) {
-      const name = t.recipient_name || 'Unknown';
-      const cur = recipientTotals.get(name) || { total: 0, count: 0 };
-      cur.total += Number(t.amount);
-      cur.count += 1;
-      recipientTotals.set(name, cur);
-    }
-    const recipients = Array.from(recipientTotals.entries()).sort((a, b) => b[1].total - a[1].total);
-
-    document.getElementById('recipient-list').innerHTML = recipients.map(([name, data]) => `
-      <li>
-        <div>
-          <div class="recipient-name">${name}</div>
-          <div class="meta">${data.count} ${data.count === 1 ? 'transfer' : 'transfers'}</div>
-        </div>
-        <div class="amount">${formatMVR(data.total)}</div>
-      </li>`).join('');
   }
 
-  // Initialize theme and load data
+  // Initialize
   initTheme();
-  load();
+  initSupabase();
 </script>
 </body>
 </html>
