@@ -139,6 +139,7 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
+    color: var(--text-primary);
   }
 
   .google-btn:hover {
@@ -234,6 +235,32 @@
   let supabase = null;
   let currentUser = null;
 
+  // Theme management - Initialize immediately
+  function initTheme() {
+    const isDark = localStorage.getItem('theme') === 'dark' || 
+                   (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    updateThemeIcon();
+  }
+
+  function updateThemeIcon() {
+    const isDark = document.documentElement.classList.contains('dark');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.textContent = isDark ? '☀️' : '🌙';
+    }
+  }
+
+  function toggleTheme() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    updateThemeIcon();
+  }
+
   // Initialize Supabase
   function initSupabase() {
     if (SUPABASE_URL && SUPABASE_KEY) {
@@ -275,36 +302,50 @@
     document.getElementById('login-modal').classList.remove('active');
   }
 
-  // Theme management
-  function initTheme() {
-    const isDark = localStorage.getItem('theme') === 'dark' || 
-                   (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      document.getElementById('theme-toggle').textContent = '☀️';
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.getElementById('theme-toggle').textContent = '🌙';
+  // Modal handlers
+  function setupEventListeners() {
+    const loginBtn = document.getElementById('login-btn');
+    const modalClose = document.getElementById('modal-close');
+    const loginModal = document.getElementById('login-modal');
+    const themeToggle = document.getElementById('theme-toggle');
+    const googleLoginBtn = document.getElementById('google-login-btn');
+    const profileBtn = document.getElementById('profile-btn');
+
+    if (loginBtn) {
+      loginBtn.addEventListener('click', () => {
+        loginModal.classList.add('active');
+      });
+    }
+
+    if (modalClose) {
+      modalClose.addEventListener('click', () => {
+        loginModal.classList.remove('active');
+      });
+    }
+
+    if (loginModal) {
+      loginModal.addEventListener('click', (e) => {
+        if (e.target.id === 'login-modal') {
+          loginModal.classList.remove('active');
+        }
+      });
+    }
+
+    if (themeToggle) {
+      themeToggle.addEventListener('click', toggleTheme);
+    }
+
+    if (googleLoginBtn) {
+      googleLoginBtn.addEventListener('click', handleGoogleLogin);
+    }
+
+    if (profileBtn) {
+      profileBtn.addEventListener('click', handleLogout);
     }
   }
 
-  // Modal handlers
-  document.getElementById('login-btn').addEventListener('click', () => {
-    document.getElementById('login-modal').classList.add('active');
-  });
-
-  document.getElementById('modal-close').addEventListener('click', () => {
-    document.getElementById('login-modal').classList.remove('active');
-  });
-
-  document.getElementById('login-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'login-modal') {
-      document.getElementById('login-modal').classList.remove('active');
-    }
-  });
-
   // Google Login
-  document.getElementById('google-login-btn').addEventListener('click', async () => {
+  async function handleGoogleLogin() {
     if (!supabase) {
       alert('Supabase not configured.');
       return;
@@ -328,10 +369,10 @@
     } finally {
       btn.classList.remove('loading');
     }
-  });
+  }
 
-  // Profile button (logout)
-  document.getElementById('profile-btn').addEventListener('click', async () => {
+  // Logout
+  async function handleLogout() {
     if (!supabase) return;
 
     const confirmed = confirm('Sign out?');
@@ -344,13 +385,7 @@
         console.error('Logout error:', error);
       }
     }
-  });
-
-  document.getElementById('theme-toggle').addEventListener('click', () => {
-    const isDark = document.documentElement.classList.toggle('dark');
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-    document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
-  });
+  }
 
   function formatMVR(n) {
     return 'MVR ' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -444,9 +479,21 @@
     }
   }
 
-  // Initialize
+  // Initialize theme first (before DOM is fully ready for instant effect)
   initTheme();
-  initSupabase();
+
+  // Setup everything when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      updateThemeIcon();
+      setupEventListeners();
+      initSupabase();
+    });
+  } else {
+    updateThemeIcon();
+    setupEventListeners();
+    initSupabase();
+  }
 </script>
 </body>
 </html>
